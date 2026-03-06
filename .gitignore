@@ -1,0 +1,23 @@
+# Ignore Node modules
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Ignore Environment Files
+.env
+.env.local
+.env.development
+.env.production
+
+# Ignore Python specific files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+env/
+.env_python
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
