@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, ShieldAlert, Users, MessageSquare, EyeOff, Eye, Plus } from 'lucide-react';
+import { Shield, ShieldAlert, Users, MessageSquare, EyeOff, Eye, Plus, Globe } from 'lucide-react';
 import clsx from 'clsx';
 import useChatStore from '../store/chatStore';
 import NewChatModal from './NewChatModal';
 import ProfileModal from './ProfileModal';
+
+const PORTFOLIO_URL = import.meta.env.VITE_PORTFOLIO_URL || '';
 
 const Sidebar = () => {
     const { user, activeChatId, setActiveChatId, chats, isEphemeralMode, toggleEphemeralMode, fetchChats } = useChatStore();
@@ -131,6 +133,18 @@ const Sidebar = () => {
                     </button>
                 </div>
 
+                {PORTFOLIO_URL && (
+                    <a
+                        href={PORTFOLIO_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2 p-3 mb-3 bg-brand-panel rounded border border-brand-border text-brand-mint/80 hover:text-brand-mint hover:bg-brand-mint/10 transition-all font-mono text-xs cursor-pointer group"
+                    >
+                        <Globe size={14} className="group-hover:animate-pulse" />
+                        <span>KNOW THE DEVELOPER</span>
+                    </a>
+                )}
+
                 <div className="text-[10px] text-gray-600 font-mono text-center">
                     v2.4.1 [ENCRYPTED]
                 </div>
@@ -144,7 +158,7 @@ const Sidebar = () => {
                 isOpen={isProfileOpen}
                 onClose={() => setIsProfileOpen(false)}
             />
-        </div>
+        </div >
     );
 };
 

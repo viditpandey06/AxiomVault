@@ -13,8 +13,15 @@ const groupRoutes = require('./routes/groupRoutes');
 const app = express();
 const server = http.createServer(app);
 
-// Middleware
-app.use(cors());
+// CORS config — use CORS_ORIGINS env var in production
+const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',')
+    : ['http://localhost:5173', 'http://localhost:3000'];
+
+app.use(cors({
+    origin: allowedOrigins,
+    credentials: true
+}));
 app.use(express.json({ limit: '5mb' }));
 
 // Routes
@@ -40,7 +47,7 @@ const startServer = async () => {
 
     const io = new Server(server, {
         cors: {
-            origin: '*',
+            origin: allowedOrigins,
             methods: ['GET', 'POST']
         }
     });

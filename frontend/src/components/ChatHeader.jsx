@@ -3,6 +3,8 @@ import { Lock, Radio, Users, X, Shield, Loader2, ArrowLeft } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion';
 import useChatStore from '../store/chatStore';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const ChatHeader = ({ chatName, isGroup, chatId, profilePhoto, status }) => {
     const { token, setActiveChatId } = useChatStore();
     const [showMembers, setShowMembers] = useState(false);
@@ -15,7 +17,7 @@ const ChatHeader = ({ chatName, isGroup, chatId, profilePhoto, status }) => {
 
         setIsLoading(true);
         try {
-            const res = await fetch(`http://localhost:5000/api/groups/${chatId}/members`, {
+            const res = await fetch(`${API_URL}/api/groups/${chatId}/members`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {

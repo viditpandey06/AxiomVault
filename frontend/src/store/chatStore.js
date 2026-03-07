@@ -8,6 +8,8 @@ import {
     importPublicKey, exportPrivateKeyJWK, importPrivateKeyJWK
 } from '../utils/crypto';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const useChatStore = create(persist((set, get) => ({
     // Settings
     isEphemeralMode: true,
@@ -21,7 +23,7 @@ const useChatStore = create(persist((set, get) => ({
     login: async (email, password, passphrase) => {
         set({ isAuthLoading: true, authError: null });
         try {
-            const res = await fetch('http://localhost:5000/api/auth/login', {
+            const res = await fetch(`${API_URL}/api/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password, auth_provider: 'local' })
@@ -40,13 +42,13 @@ const useChatStore = create(persist((set, get) => ({
             // 3. Export to JWK and store in sessionStorage so it survives refresh
             const jwk = await exportPrivateKeyJWK(myPrivateKey);
             sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
-            sessionStorage.setItem('chat_user', JSON.stringify(data.user)); // also keep user obj
+            sessionStorage.setItem('chat_user', JSON.stringify(data.user));
 
             localStorage.setItem('chat_token', data.token);
             set({
                 user: data.user,
                 token: data.token,
-                privateKey: myPrivateKey, // Store strictly in memory
+                privateKey: myPrivateKey,
                 isAuthLoading: false
             });
             return true;
@@ -60,19 +62,12 @@ const useChatStore = create(persist((set, get) => ({
         set({ isAuthLoading: true, authError: null });
         try {
             // --- WEBCRYPTO GENERATION LAYER ---
-            // 1. Generate RSA-2048 Key Pair
             const keyPair = await generateRSAKeyPair();
-
-            // 2. Export Public Key for the Server
             const exportedPublicKey = await exportPublicKey(keyPair.publicKey);
-
-            // 3. Derive AES-GCM Key from User's Passphrase
-            const aesKey = await deriveKeyFromPassphrase(passphrase, email); // using email as salt in MVP
-
-            // 4. Encrypt the Private Key with AES
+            const aesKey = await deriveKeyFromPassphrase(passphrase, email);
             const encryptedPrivateKeyBase64 = await encryptPrivateKey(keyPair.privateKey, aesKey);
 
-            const res = await fetch('http://localhost:5000/api/auth/signup', {
+            const res = await fetch(`${API_URL}/api/auth/signup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -88,7 +83,6 @@ const useChatStore = create(persist((set, get) => ({
 
             if (!res.ok) throw new Error(data.error || 'Signup failed');
 
-            // 5. Store JWK and User securely in sessionStorage for refresh parsing
             const jwk = await exportPrivateKeyJWK(keyPair.privateKey);
             sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
             sessionStorage.setItem('chat_user', JSON.stringify(data.user));
@@ -97,7 +91,7 @@ const useChatStore = create(persist((set, get) => ({
             set({
                 user: data.user,
                 token: data.token,
-                privateKey: keyPair.privateKey, // Keep decrypted copy in memory for session
+                privateKey: keyPair.privateKey,
                 isAuthLoading: false
             });
             return true;
@@ -111,7 +105,7 @@ const useChatStore = create(persist((set, get) => ({
     googleLogin: async (credential) => {
         set({ isAuthLoading: true, authError: null });
         try {
-            const res = await fetch('http://localhost:5000/api/auth/google', {
+            const res = await fetch(`${API_URL}/api/auth/google`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ credential })
@@ -121,8 +115,6 @@ const useChatStore = create(persist((set, get) => ({
             if (!res.ok) throw new Error(data.error || 'Google authentication failed');
 
             if (data.isNewUser) {
-                // New user — need passphrase to generate keys
-                // Store token temporarily so we can call set-keys endpoint
                 localStorage.setItem('chat_token', data.token);
                 set({
                     token: data.token,
@@ -131,8 +123,6 @@ const useChatStore = create(persist((set, get) => ({
                 });
                 return { isNewUser: true, email: data.user.email };
             } else {
-                // Returning user — need passphrase to decrypt existing keys
-                // Store data temporarily, actual login completes after passphrase
                 set({
                     isAuthLoading: false,
                     _pendingGoogleData: data
@@ -151,20 +141,12 @@ const useChatStore = create(persist((set, get) => ({
         try {
             const { token } = get();
 
-            // 1. Generate RSA Key Pair
             const keyPair = await generateRSAKeyPair();
-
-            // 2. Export Public Key
             const exportedPublicKey = await exportPublicKey(keyPair.publicKey);
-
-            // 3. Derive AES key from passphrase
             const aesKey = await deriveKeyFromPassphrase(passphrase, email);
-
-            // 4. Encrypt Private Key
             const encryptedPrivateKeyBase64 = await encryptPrivateKey(keyPair.privateKey, aesKey);
 
-            // 5. Send keys to server
-            const res = await fetch('http://localhost:5000/api/auth/set-keys', {
+            const res = await fetch(`${API_URL}/api/auth/set-keys`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -179,7 +161,6 @@ const useChatStore = create(persist((set, get) => ({
 
             if (!res.ok) throw new Error(data.error || 'Failed to set keys');
 
-            // 6. Store JWK in session
             const jwk = await exportPrivateKeyJWK(keyPair.privateKey);
             sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
             sessionStorage.setItem('chat_user', JSON.stringify(data.user));
@@ -205,13 +186,9 @@ const useChatStore = create(persist((set, get) => ({
 
             const { token, user } = pending;
 
-            // 1. Derive AES key from passphrase
             const aesKey = await deriveKeyFromPassphrase(passphrase, user.email);
-
-            // 2. Decrypt private key
             const myPrivateKey = await decryptPrivateKey(user.encrypted_private_key, aesKey);
 
-            // 3. Store in session
             const jwk = await exportPrivateKeyJWK(myPrivateKey);
             sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
             sessionStorage.setItem('chat_user', JSON.stringify(user));
@@ -267,7 +244,6 @@ const useChatStore = create(persist((set, get) => ({
                     if (remaining > 0) {
                         set({ isFrozen: true, freezeTimeLeft: remaining });
                     } else {
-                        // Timer expired while page was closed, clear it
                         sessionStorage.removeItem('freeze_expires_at');
                     }
                 }
@@ -279,7 +255,6 @@ const useChatStore = create(persist((set, get) => ({
                 return false;
             }
         } else {
-            // Missing partial credentials, wipe everything to be safe
             get().logout();
             return false;
         }
@@ -288,15 +263,15 @@ const useChatStore = create(persist((set, get) => ({
     // Socket State & Actions
     socket: null,
     isConnected: false,
-    privateKey: null, // Holds the decrypted RSA private key in memory
+    privateKey: null,
 
     connectSocket: () => {
         const { token, socket, addMessage } = get();
         if (!token) return;
 
-        if (socket?.connected) return; // Already connected
+        if (socket?.connected) return;
 
-        const newSocket = io('http://localhost:5000', {
+        const newSocket = io(API_URL, {
             auth: { token }
         });
 
@@ -321,12 +296,8 @@ const useChatStore = create(persist((set, get) => ({
             const chatId = incomingMsg.sender_id;
 
             try {
-                // WEBCRYPTO DECRYPT PAYLOAD
                 if (privateKey) {
-                    // 1. Unwrap the AES Message Key using our RSA Private Key
                     const messageKey = await unwrapMessageKey(incomingMsg.encrypted_aes_key, privateKey);
-
-                    // 2. Decrypt the actual payload using the Message Key
                     const plaintext = await decryptPayload(incomingMsg.ciphertext, messageKey);
 
                     const formattedMessage = {
@@ -338,7 +309,6 @@ const useChatStore = create(persist((set, get) => ({
                     };
                     addMessage(chatId, formattedMessage);
 
-                    // Refresh chat list if this is a new contact
                     const isNewContact = !get().chats.find(c => c.id === chatId);
                     if (isNewContact) {
                         get().fetchChats();
@@ -361,9 +331,8 @@ const useChatStore = create(persist((set, get) => ({
                     sessionStorage.setItem('chat_user', JSON.stringify(updatedUser));
                 }
 
-                // FREEZE TRIGGER: If trust score hits 0, lock the user out
                 if (data.trust_score <= 0 && !get().isFrozen) {
-                    const expiresAt = Date.now() + 60000; // 60 seconds from now
+                    const expiresAt = Date.now() + 60000;
                     sessionStorage.setItem('freeze_expires_at', expiresAt.toString());
                     set({ isFrozen: true, freezeTimeLeft: 60 });
                 }
@@ -396,11 +365,10 @@ const useChatStore = create(persist((set, get) => ({
     sendMessageViaSocket: async (receiverId, text) => {
         const { socket, chats, addMessage, updateMessageStatus } = get();
 
-        // 1. Optimistic UI update
         const tempId = Date.now().toString();
         const newMessage = {
             id: tempId,
-            text, // kept as plaintext in UI memory
+            text,
             isSent: true,
             status: 'scanning',
             timestamp: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -409,15 +377,12 @@ const useChatStore = create(persist((set, get) => ({
 
         if (socket && socket.connected) {
             try {
-                // WEBCRYPTO ENCRYPT PAYLOAD
-
-                // a. Fetch Receiver's Public Key
                 let targetContact = chats.find(c => c.id === receiverId);
                 let receiverPublicKeyBase64 = targetContact?.publicKey;
 
                 if (!receiverPublicKeyBase64) {
                     const { token } = get();
-                    const res = await fetch(`http://localhost:5000/api/users/${receiverId}/public_key`, {
+                    const res = await fetch(`${API_URL}/api/users/${receiverId}/public_key`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
                     if (res.ok) {
@@ -433,14 +398,8 @@ const useChatStore = create(persist((set, get) => ({
                 }
 
                 const receiverPublicKey = await importPublicKey(receiverPublicKeyBase64);
-
-                // b. Generate a random AES Message Key
                 const messageKey = await generateMessageKey();
-
-                // c. Encrypt Plaintext Payload
                 const ciphertext = await encryptPayload(text, messageKey);
-
-                // d. Wrap AES Key with Receiver's RSA Public Key
                 const wrappedAesKey = await wrapMessageKey(messageKey, receiverPublicKey);
 
                 const payload = {
@@ -449,7 +408,6 @@ const useChatStore = create(persist((set, get) => ({
                     encrypted_aes_key: wrappedAesKey
                 };
 
-                // Transition status manually for cinematic effect
                 setTimeout(() => {
                     updateMessageStatus(receiverId, tempId, 'safe');
 
@@ -483,7 +441,7 @@ const useChatStore = create(persist((set, get) => ({
 
         try {
             // Fetch DMs
-            const dmRes = await fetch('http://localhost:5000/api/users/chats', {
+            const dmRes = await fetch(`${API_URL}/api/users/chats`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             let dms = [];
@@ -492,7 +450,7 @@ const useChatStore = create(persist((set, get) => ({
             }
 
             // Fetch Groups
-            const groupRes = await fetch('http://localhost:5000/api/groups', {
+            const groupRes = await fetch(`${API_URL}/api/groups`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             let groups = [];
@@ -507,7 +465,6 @@ const useChatStore = create(persist((set, get) => ({
                 }));
             }
 
-            // Combine and sort by last activity descending
             const combined = [...dms, ...groups].sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
 
             set({ chats: combined });
@@ -521,11 +478,10 @@ const useChatStore = create(persist((set, get) => ({
     },
 
     addChat: (chat) => set((state) => {
-        // Prevent duplicate chats
         const exists = state.chats.find(c => c.id === chat.id);
         if (exists) return state;
 
-        get().loadChatHistory(chat.id); // Try to populate right away 
+        get().loadChatHistory(chat.id);
 
         return {
             chats: [chat, ...state.chats],
@@ -545,7 +501,7 @@ const useChatStore = create(persist((set, get) => ({
         if (!token || !privateKey) return;
 
         try {
-            const res = await fetch(`http://localhost:5000/api/messages/${chatId}`, {
+            const res = await fetch(`${API_URL}/api/messages/${chatId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -554,26 +510,20 @@ const useChatStore = create(persist((set, get) => ({
             const rawMessages = await res.json();
             const decryptedMessages = [];
 
-            // IMPORTANT: In a real app, you shouldn't blocking-decrypt 100 messages simultaneously if payloads are massive.
-            // For this MVP, Promise.all on brief text strings is fast enough.
             for (const msg of rawMessages) {
                 try {
-                    // 1. Unwrap AES key 
                     const messageKey = await unwrapMessageKey(msg.encrypted_aes_key, privateKey);
-
-                    // 2. Decrypt Payload
                     const plaintext = await decryptPayload(msg.ciphertext, messageKey);
 
                     decryptedMessages.push({
                         id: msg._id,
                         text: plaintext,
                         isSent: msg.sender_id === user._id,
-                        status: 'encrypted', // History messages are already confirmed secure
+                        status: 'encrypted',
                         timestamp: new Date(msg.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
                     });
                 } catch (cryptErr) {
                     console.error("Failed to decrypt a historical message", cryptErr);
-                    // Decide if we skip corrupted messages or push an "Unreadable" tag
                     decryptedMessages.push({
                         id: msg._id || Date.now().toString(),
                         text: "[DECRYPTION FAILED - KEY DESTROYED OR CORRUPTED]",
@@ -584,7 +534,6 @@ const useChatStore = create(persist((set, get) => ({
                 }
             }
 
-            // Update state
             set((state) => ({
                 messages: {
                     ...state.messages,
@@ -600,7 +549,6 @@ const useChatStore = create(persist((set, get) => ({
     addMessage: (chatId, message) => set((state) => {
         const chatMessages = state.messages[chatId] || [];
 
-        // If ephemeral mode is on, we only keep the very LAST message
         if (state.isEphemeralMode) {
             return {
                 messages: {
@@ -610,7 +558,6 @@ const useChatStore = create(persist((set, get) => ({
             };
         }
 
-        // Otherwise, append normally
         return {
             messages: {
                 ...state.messages,
@@ -640,21 +587,19 @@ const useChatStore = create(persist((set, get) => ({
         if (socket && socket.connected) {
             socket.emit('request_trust_reset', {}, (response) => {
                 const { user } = get();
-                const newScore = response?.status === 'ok' ? response.trust_score : 50; // Fallback score if backend fails
+                const newScore = response?.status === 'ok' ? response.trust_score : 50;
                 const updatedUser = { ...user, trust_score: newScore };
                 set({ user: updatedUser, isFrozen: false, freezeTimeLeft: 0 });
                 if (sessionStorage.getItem('chat_user')) {
                     sessionStorage.setItem('chat_user', JSON.stringify(updatedUser));
                 }
             });
-            // Force unfreeze after 3 seconds if socket doesn't respond
             setTimeout(() => {
                 if (get().isFrozen) {
                     set({ isFrozen: false, freezeTimeLeft: 0 });
                 }
             }, 3000);
         } else {
-            // Fallback: just unfreeze locally
             set({ isFrozen: false, freezeTimeLeft: 0 });
         }
     }

@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Search, Users, UserPlus, X, Shield, Plus, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import useChatStore from '../store/chatStore';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 import { generateMessageKey, importPublicKey, wrapMessageKey } from '../utils/crypto';
 
 const NewChatModal = ({ isOpen, onClose }) => {
@@ -28,7 +30,7 @@ const NewChatModal = ({ isOpen, onClose }) => {
 
         setIsSearching(true);
         try {
-            const res = await fetch(`http://localhost:5000/api/users/search?query=${query}`, {
+            const res = await fetch(`${API_URL}/api/users/search?query=${query}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -94,7 +96,7 @@ const NewChatModal = ({ isOpen, onClose }) => {
                 keys: wrappedKeys
             };
 
-            const res = await fetch('http://localhost:5000/api/groups/create', {
+            const res = await fetch(`${API_URL}/api/groups/create`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

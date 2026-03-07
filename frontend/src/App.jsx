@@ -11,21 +11,79 @@ function App() {
   const { activeChatId, chats, token, connectSocket, disconnectSocket, restoreSession, isFrozen } = useChatStore();
   const [isRestoring, setIsRestoring] = useState(true);
   const [showPreloader, setShowPreloader] = useState(true);
+  const [isServerAwake, setIsServerAwake] = useState(false);
+  const [preloaderMessage, setPreloaderMessage] = useState("INITIALIZING COMMUNICATION PROTOCOLS...");
   const activeChatInfo = chats.find((c) => c.id === activeChatId);
 
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
   useEffect(() => {
+    let isMounted = true;
+    let pingInterval;
+
     const initSession = async () => {
       await restoreSession();
-      setIsRestoring(false);
+      if (isMounted) setIsRestoring(false);
     };
     initSession();
 
-    // Minimum Preloader display time (4.5 seconds)
-    const timer = setTimeout(() => {
+    // Minimum cinematic display time
+    const minTimer = new Promise(resolve => setTimeout(resolve, 4500));
+
+    // Ping function to check if backend is online
+    const checkServer = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/health`);
+        if (res.ok) {
+          if (isMounted) setIsServerAwake(true);
+          return true;
+        }
+      } catch (err) {
+        // Server is likely sleeping
+      }
+      return false;
+    };
+
+    // Execute initial ping
+    checkServer().then(awake => {
+      if (!awake && isMounted) {
+        // If not immediately awake, start pinging every 3s and update message
+        setTimeout(() => {
+          if (isMounted && !isServerAwake) {
+            setPreloaderMessage("WAKING SECURE SERVERS... ESTABLISHING TUNNELS...");
+          }
+        }, 3000); // Wait 3s before showing the "waking" message to allow for normal network latency
+
+        pingInterval = setInterval(async () => {
+          const nowAwake = await checkServer();
+          if (nowAwake) {
+            clearInterval(pingInterval);
+          }
+        }, 3000);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (pingInterval) clearInterval(pingInterval);
+    };
+  }, [restoreSession, API_URL]);
+
+  // Combine conditions to hide preloader
+  // We hide it only when: minimum time has passed (we can track this with a state) AND server is awake AND restoring is done.
+  const [minTimePassed, setMinTimePassed] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setMinTimePassed(true), 4500);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    // Hide preloader once all requirements are met
+    if (minTimePassed && isServerAwake && !isRestoring) {
       setShowPreloader(false);
-    }, 4500);
-    return () => clearTimeout(timer);
-  }, [restoreSession]);
+    }
+  }, [minTimePassed, isServerAwake, isRestoring]);
 
   useEffect(() => {
     if (token) {
@@ -37,7 +95,7 @@ function App() {
   }, [token, connectSocket, disconnectSocket]);
 
   if (showPreloader || isRestoring) {
-    return <Preloader message={isRestoring ? "REHYDRATING SYSTEM KERNEL..." : "INITIALIZING COMMUNICATION PROTOCOLS..."} />;
+    return <Preloader message={isRestoring ? "REHYDRATING SYSTEM KERNEL..." : preloaderMessage} />;
   }
 
   if (!token) {

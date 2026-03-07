@@ -6,6 +6,8 @@ import Cropper from 'react-easy-crop';
 import clsx from 'clsx';
 import useChatStore from '../store/chatStore';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 // Utility: create a cropped image from the crop area
 async function getCroppedImg(imageSrc, pixelCrop) {
     const image = await createImage(imageSrc);
@@ -73,7 +75,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
 
     const fetchProfile = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/users/profile', {
+            const res = await fetch(`${API_URL}/api/users/profile`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -139,7 +141,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
             const formPayload = new FormData();
             formPayload.append('photo', croppedBlob, 'profile.jpg');
 
-            const res = await fetch('http://localhost:5000/api/users/profile/photo', {
+            const res = await fetch(`${API_URL}/api/users/profile/photo`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formPayload
@@ -178,7 +180,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
         setIsSaving(true);
         setSaveMsg('');
         try {
-            const res = await fetch('http://localhost:5000/api/users/profile', {
+            const res = await fetch(`${API_URL}/api/users/profile`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
