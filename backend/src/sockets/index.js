@@ -33,9 +33,12 @@ const setupSockets = (io) => {
         // Handle disconnection
         socket.on('disconnect', async () => {
             console.log(`User disconnected: ${socket.user.username}`);
-            await redisClient.del(`user_socket:${socket.user._id}`);
-            await redisClient.sRem('online_users', socket.user._id.toString());
-            socket.broadcast.emit('user_status', { userId: socket.user._id, status: 'offline' });
+            const currentSocketId = await redisClient.get(`user_socket:${socket.user._id}`);
+            if (currentSocketId === socket.id) {
+                await redisClient.del(`user_socket:${socket.user._id}`);
+                await redisClient.sRem('online_users', socket.user._id.toString());
+                socket.broadcast.emit('user_status', { userId: socket.user._id, status: 'offline' });
+            }
         });
 
         // Setup message handlers

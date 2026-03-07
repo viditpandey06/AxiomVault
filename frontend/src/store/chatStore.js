@@ -313,6 +313,10 @@ const useChatStore = create(persist((set, get) => ({
                     if (isNewContact) {
                         get().fetchChats();
                     }
+
+                    if (get().activeChatId !== chatId) {
+                        get().incrementUnreadCount(chatId);
+                    }
                 } else {
                     console.error("No private key in memory to decrypt incoming message.");
                 }
@@ -431,7 +435,24 @@ const useChatStore = create(persist((set, get) => ({
 
     // App State
     activeChatId: null,
-    setActiveChatId: (id) => set({ activeChatId: id }),
+    setActiveChatId: (id) => {
+        set({ activeChatId: id });
+        get().clearUnreadCount(id);
+    },
+
+    unreadCounts: {},
+    incrementUnreadCount: (chatId) => set((state) => ({
+        unreadCounts: {
+            ...state.unreadCounts,
+            [chatId]: (state.unreadCounts[chatId] || 0) + 1
+        }
+    })),
+    clearUnreadCount: (chatId) => set((state) => ({
+        unreadCounts: {
+            ...state.unreadCounts,
+            [chatId]: 0
+        }
+    })),
 
     chats: [],
 
@@ -607,7 +628,8 @@ const useChatStore = create(persist((set, get) => ({
     name: 'noc-chat-storage',
     partialize: (state) => ({
         messages: state.messages,
-        isEphemeralMode: state.isEphemeralMode
+        isEphemeralMode: state.isEphemeralMode,
+        unreadCounts: state.unreadCounts
     })
 }));
 

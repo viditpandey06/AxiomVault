@@ -28,3 +28,5 @@ Thumbs.db
 *.docx
 *.txt
 
+# Do not push the deployment guide to GitHub
+DEPLOYMENT.md

@@ -8,7 +8,7 @@ import useChatStore from './store/chatStore';
 import clsx from 'clsx';
 
 function App() {
-  const { activeChatId, chats, token, connectSocket, disconnectSocket, restoreSession, isFrozen } = useChatStore();
+  const { activeChatId, chats, token, connectSocket, disconnectSocket, restoreSession, isFrozen, unreadCounts } = useChatStore();
   const [isRestoring, setIsRestoring] = useState(true);
   const [showPreloader, setShowPreloader] = useState(true);
   const [isServerAwake, setIsServerAwake] = useState(false);
@@ -93,6 +93,15 @@ function App() {
       disconnectSocket();
     };
   }, [token, connectSocket, disconnectSocket]);
+
+  useEffect(() => {
+    const totalUnread = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
+    if (totalUnread > 0) {
+      document.title = `(${totalUnread}) AxiomVault - Secure Chat`;
+    } else {
+      document.title = 'AxiomVault';
+    }
+  }, [unreadCounts]);
 
   if (showPreloader || isRestoring) {
     return <Preloader message={isRestoring ? "REHYDRATING SYSTEM KERNEL..." : preloaderMessage} />;

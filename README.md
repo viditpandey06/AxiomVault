@@ -48,3 +48,9 @@ AxiomVault relies on a hybrid encryption model executed entirely on the client s
 *   **Dynamic Trust Scoring System:** Real-time analysis penalizes suspicious accounts, applying automated rate limits (via Redis) to defend against DDoS or spam vectors.
 
 *Note: Environment variables, database configurations, and cryptographic secrets have been intentionally omitted from this repository.*
+
+---
+
+## 🚀 Deployment Guide
+
+For a detailed breakdown of how this application was deployed to Vercel and Render using a custom GoDaddy domain, please read the [DEPLOYMENT.md](./DEPLOYMENT.md) guide.

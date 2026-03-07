@@ -8,7 +8,7 @@ import ProfileModal from './ProfileModal';
 const PORTFOLIO_URL = import.meta.env.VITE_PORTFOLIO_URL || '';
 
 const Sidebar = () => {
-    const { user, activeChatId, setActiveChatId, chats, isEphemeralMode, toggleEphemeralMode, fetchChats } = useChatStore();
+    const { user, activeChatId, setActiveChatId, chats, isEphemeralMode, toggleEphemeralMode, fetchChats, unreadCounts } = useChatStore();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isProfileOpen, setIsProfileOpen] = useState(false);
 
@@ -89,6 +89,11 @@ const Sidebar = () => {
                                 {chat.lastActivity}
                             </p>
                         </div>
+                        {unreadCounts[chat.id] > 0 && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 bg-brand-mint text-gray-900 text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-[0_0_10px_rgba(6,182,212,0.8)]">
+                                {unreadCounts[chat.id]}
+                            </div>
+                        )}
                     </button>
                 ))}
             </div>
