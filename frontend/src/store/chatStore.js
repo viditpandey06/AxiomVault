@@ -213,10 +213,29 @@ const useChatStore = create(persist((set, get) => ({
     logout: () => {
         const { disconnectSocket } = get();
         disconnectSocket();
+
+        // Remove auth tokens
         localStorage.removeItem('chat_token');
         sessionStorage.removeItem('chat_priv_key_jwk');
         sessionStorage.removeItem('chat_user');
-        set({ user: null, token: null, privateKey: null, _pendingGoogleData: null });
+        sessionStorage.removeItem('freeze_expires_at');
+
+        // Wipe all internal chat state
+        set({
+            user: null,
+            token: null,
+            privateKey: null,
+            _pendingGoogleData: null,
+            chats: [],
+            messages: {},
+            activeChatId: null,
+            unreadCounts: {},
+            isFrozen: false,
+            freezeTimeLeft: 0
+        });
+
+        // Clear Zustand's persisted storage
+        localStorage.removeItem('noc-chat-storage');
     },
 
     // Session Restoration
@@ -292,13 +311,17 @@ const useChatStore = create(persist((set, get) => ({
 
         // Listen for incoming private messages
         newSocket.on('receive_private_message', async (incomingMsg) => {
+            console.log("📥 [SOCKET] Received raw private message payload:", incomingMsg);
             const { privateKey, addMessage } = get();
             const chatId = incomingMsg.sender_id;
 
             try {
                 if (privateKey) {
+                    console.log(`🔐 [CRYPTO] Attempting to unwrap AES key for message from ${chatId}...`);
                     const messageKey = await unwrapMessageKey(incomingMsg.encrypted_aes_key, privateKey);
+                    console.log(`🔓 [CRYPTO] AES Key unwrapped. Decrypting payload...`);
                     const plaintext = await decryptPayload(incomingMsg.ciphertext, messageKey);
+                    console.log(`✅ [SUCCESS] Payload decrypted: ${plaintext}`);
 
                     const formattedMessage = {
                         id: incomingMsg._id || Date.now().toString(),
