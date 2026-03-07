@@ -332,7 +332,7 @@ const useChatStore = create(persist((set, get) => ({
                     };
                     addMessage(chatId, formattedMessage);
 
-                    const { chats, addMessage, token } = get();
+                    const { chats, token } = get();
                     const isNewContact = !chats.find(c => c.id === chatId);
 
                     if (isNewContact) {
