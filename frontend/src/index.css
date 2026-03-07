@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-bg: #070b14;
+  --color-brand-panel: #0c1322;
+  --color-brand-border: #1a2540;
+  --color-brand-mint: #06b6d4;
+  --color-brand-mint-light: #22d3ee;
+  --font-inter: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-brand-bg);
+    color: #f3f4f6;
+    font-family: var(--font-inter);
+  }
+}
+
+/* Lightweight CSS animations to replace framer-motion infinite loops */
+@keyframes pulse-opacity {
+
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes scan-pulse {
+
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-pulse-opacity {
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
+.animate-blink {
+  animation: blink 0.8s ease-in-out infinite;
+}
+
+.animate-scan-pulse {
+  animation: scan-pulse 1s ease-in-out infinite;
+}
