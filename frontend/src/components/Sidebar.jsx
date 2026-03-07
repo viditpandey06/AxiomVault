@@ -26,10 +26,14 @@ const Sidebar = () => {
                     {user && (
                         <button
                             onClick={() => setIsProfileOpen(true)}
-                            className="w-9 h-9 rounded-full bg-brand-mint/20 flex items-center justify-center text-brand-mint font-bold text-sm border border-brand-mint/50 hover:bg-brand-mint/30 hover:shadow-[0_0_12px_rgba(6,182,212,0.3)] transition-all"
+                            className="w-9 h-9 rounded-full bg-brand-mint/20 flex items-center justify-center text-brand-mint font-bold text-sm border border-brand-mint/50 hover:bg-brand-mint/30 hover:shadow-[0_0_12px_rgba(6,182,212,0.3)] transition-all overflow-hidden"
                             title="View Profile"
                         >
-                            {user.username.charAt(0).toUpperCase()}
+                            {user.profile_photo ? (
+                                <img src={user.profile_photo} alt={user.username} className="w-full h-full object-cover" />
+                            ) : (
+                                user.username.charAt(0).toUpperCase()
+                            )}
                         </button>
                     )}
                 </div>
@@ -63,8 +67,14 @@ const Sidebar = () => {
                         {activeChatId === chat.id && (
                             <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-mint shadow-[0_0_10px_rgba(6,182,212,0.8)]" />
                         )}
-                        <div className="w-10 h-10 rounded-full bg-gray-800 flex flex-shrink-0 items-center justify-center text-gray-400 border border-gray-700">
-                            {chat.isGroup ? <Users size={18} /> : <MessageSquare size={18} />}
+                        <div className="w-10 h-10 rounded-full bg-gray-800 flex flex-shrink-0 items-center justify-center text-gray-400 border border-gray-700 overflow-hidden">
+                            {chat.isGroup ? (
+                                <Users size={18} />
+                            ) : chat.profilePhoto ? (
+                                <img src={chat.profilePhoto} alt={chat.name} className="w-full h-full object-cover" />
+                            ) : (
+                                <MessageSquare size={18} />
+                            )}
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-center mb-0.5">

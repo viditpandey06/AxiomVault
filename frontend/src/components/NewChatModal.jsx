@@ -49,6 +49,8 @@ const NewChatModal = ({ isOpen, onClose }) => {
             id: targetUser._id,
             name: targetUser.username,
             publicKey: targetUser.public_key,
+            profilePhoto: targetUser.profile_photo || '',
+            status: targetUser.status || '',
             lastActivity: new Date().toISOString(),
             isGroup: false
         });
@@ -202,8 +204,12 @@ const NewChatModal = ({ isOpen, onClose }) => {
                         {searchResults.map(user => (
                             <div key={user._id} className="flex items-center justify-between p-3 bg-gray-800/40 rounded border border-gray-800 hover:border-brand-mint/30 transition-colors">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center border border-gray-600">
-                                        <UserPlus size={14} className="text-gray-400" />
+                                    <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center border border-gray-600 overflow-hidden">
+                                        {user.profile_photo ? (
+                                            <img src={user.profile_photo} alt={user.username} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <UserPlus size={14} className="text-gray-400" />
+                                        )}
                                     </div>
                                     <div>
                                         <p className="text-white text-sm font-medium">{user.username}</p>

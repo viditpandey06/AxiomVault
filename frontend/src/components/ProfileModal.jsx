@@ -1,9 +1,48 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Shield, Save, Loader2, User as UserIcon, LogOut, Camera } from 'lucide-react';
+import { X, Shield, Save, Loader2, User as UserIcon, LogOut, Camera, Check, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Cropper from 'react-easy-crop';
 import clsx from 'clsx';
 import useChatStore from '../store/chatStore';
+
+// Utility: create a cropped image from the crop area
+async function getCroppedImg(imageSrc, pixelCrop) {
+    const image = await createImage(imageSrc);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = pixelCrop.width;
+    canvas.height = pixelCrop.height;
+
+    ctx.drawImage(
+        image,
+        pixelCrop.x,
+        pixelCrop.y,
+        pixelCrop.width,
+        pixelCrop.height,
+        0,
+        0,
+        pixelCrop.width,
+        pixelCrop.height
+    );
+
+    return new Promise((resolve) => {
+        canvas.toBlob((blob) => {
+            resolve(blob);
+        }, 'image/jpeg', 0.9);
+    });
+}
+
+function createImage(url) {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.addEventListener('load', () => resolve(image));
+        image.addEventListener('error', (error) => reject(error));
+        image.setAttribute('crossOrigin', 'anonymous');
+        image.src = url;
+    });
+}
 
 const ProfileModal = ({ isOpen, onClose }) => {
     const { user, token, logout } = useChatStore();
@@ -15,11 +54,16 @@ const ProfileModal = ({ isOpen, onClose }) => {
         status: ''
     });
     const [profilePhoto, setProfilePhoto] = useState('');
-    const [photoPreview, setPhotoPreview] = useState('');
     const [isUploading, setIsUploading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [saveMsg, setSaveMsg] = useState('');
     const fileInputRef = useRef(null);
+
+    // Cropper state
+    const [cropImageSrc, setCropImageSrc] = useState(null);
+    const [crop, setCrop] = useState({ x: 0, y: 0 });
+    const [zoom, setZoom] = useState(1);
+    const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
     useEffect(() => {
         if (isOpen && user) {
@@ -42,38 +86,58 @@ const ProfileModal = ({ isOpen, onClose }) => {
                     status: data.status || ''
                 });
                 setProfilePhoto(data.profile_photo || '');
-                setPhotoPreview('');
             }
         } catch (err) {
             console.error("Failed to fetch profile:", err);
         }
     };
 
-    const handlePhotoSelect = async (e) => {
+    const handlePhotoSelect = (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Client-side validation
         if (!file.type.startsWith('image/')) {
             setSaveMsg('Only image files are allowed');
             return;
         }
-        if (file.size > 2 * 1024 * 1024) {
-            setSaveMsg('Image must be under 2MB');
+        if (file.size > 5 * 1024 * 1024) {
+            setSaveMsg('Image must be under 5MB');
             return;
         }
 
-        // Show preview immediately
+        // Read as data URL and open cropper
         const reader = new FileReader();
-        reader.onload = (ev) => setPhotoPreview(ev.target.result);
+        reader.onload = (ev) => {
+            setCropImageSrc(ev.target.result);
+            setCrop({ x: 0, y: 0 });
+            setZoom(1);
+        };
         reader.readAsDataURL(file);
+        // Reset file input so re-selecting same file works
+        e.target.value = '';
+    };
 
-        // Upload to server
+    const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
+        setCroppedAreaPixels(croppedAreaPixels);
+    }, []);
+
+    const handleCropConfirm = async () => {
+        if (!croppedAreaPixels || !cropImageSrc) return;
+
         setIsUploading(true);
         setSaveMsg('');
         try {
+            const croppedBlob = await getCroppedImg(cropImageSrc, croppedAreaPixels);
+
+            // Check final size
+            if (croppedBlob.size > 2 * 1024 * 1024) {
+                setSaveMsg('Cropped image is too large. Try zooming out.');
+                setIsUploading(false);
+                return;
+            }
+
             const formPayload = new FormData();
-            formPayload.append('photo', file);
+            formPayload.append('photo', croppedBlob, 'profile.jpg');
 
             const res = await fetch('http://localhost:5000/api/users/profile/photo', {
                 method: 'POST',
@@ -83,10 +147,9 @@ const ProfileModal = ({ isOpen, onClose }) => {
             const data = await res.json();
             if (res.ok) {
                 setProfilePhoto(data.profile_photo);
-                setPhotoPreview('');
+                setCropImageSrc(null);
                 setSaveMsg('Photo uploaded successfully');
 
-                // Update user in global store + sessionStorage
                 const currentUser = useChatStore.getState().user;
                 const updatedUser = { ...currentUser, profile_photo: data.profile_photo };
                 useChatStore.setState({ user: updatedUser });
@@ -98,10 +161,17 @@ const ProfileModal = ({ isOpen, onClose }) => {
                 setSaveMsg(data.error || 'Upload failed');
             }
         } catch (err) {
-            setSaveMsg('Network error during upload');
+            console.error("Crop upload error:", err);
+            setSaveMsg('Failed to upload cropped image');
         } finally {
             setIsUploading(false);
         }
+    };
+
+    const handleCropCancel = () => {
+        setCropImageSrc(null);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
     };
 
     const handleSave = async () => {
@@ -118,7 +188,6 @@ const ProfileModal = ({ isOpen, onClose }) => {
             });
             const data = await res.json();
             if (res.ok) {
-                // Update user in global store + sessionStorage
                 const currentUser = useChatStore.getState().user;
                 const updatedUser = { ...currentUser, ...data };
                 useChatStore.setState({ user: updatedUser });
@@ -144,7 +213,68 @@ const ProfileModal = ({ isOpen, onClose }) => {
 
     if (!isOpen) return null;
 
-    const displayPhoto = photoPreview || profilePhoto;
+    // If cropping mode is active, show full-screen cropper
+    if (cropImageSrc) {
+        return createPortal(
+            <div className="fixed inset-0 z-[110] bg-black flex flex-col">
+                {/* Cropper Header */}
+                <div className="flex items-center justify-between p-4 bg-gray-900 border-b border-brand-border z-10">
+                    <h3 className="text-white font-mono font-bold text-sm flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-brand-mint" />
+                        CROP PROFILE IMAGE
+                    </h3>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={handleCropCancel}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-gray-400 hover:text-white border border-gray-700 hover:border-gray-500 rounded font-mono text-xs transition-colors"
+                        >
+                            <RotateCcw size={14} />
+                            CANCEL
+                        </button>
+                        <button
+                            onClick={handleCropConfirm}
+                            disabled={isUploading}
+                            className="flex items-center gap-1.5 px-4 py-1.5 bg-brand-mint text-black rounded font-mono text-xs font-bold hover:bg-brand-mint/80 transition-colors disabled:opacity-50"
+                        >
+                            {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                            {isUploading ? 'UPLOADING...' : 'CONFIRM & UPLOAD'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Cropper Area */}
+                <div className="flex-1 relative">
+                    <Cropper
+                        image={cropImageSrc}
+                        crop={crop}
+                        zoom={zoom}
+                        aspect={1}
+                        cropShape="round"
+                        showGrid={false}
+                        onCropChange={setCrop}
+                        onZoomChange={setZoom}
+                        onCropComplete={onCropComplete}
+                    />
+                </div>
+
+                {/* Zoom Slider */}
+                <div className="p-4 bg-gray-900 border-t border-brand-border flex items-center justify-center gap-4">
+                    <span className="text-xs font-mono text-gray-500">ZOOM</span>
+                    <input
+                        type="range"
+                        min={1}
+                        max={3}
+                        step={0.05}
+                        value={zoom}
+                        onChange={(e) => setZoom(Number(e.target.value))}
+                        className="w-48 accent-brand-mint"
+                    />
+                    <span className="text-xs font-mono text-brand-mint w-8">{zoom.toFixed(1)}x</span>
+                </div>
+            </div>,
+            document.body
+        );
+    }
 
     return createPortal(
         <AnimatePresence>
@@ -181,8 +311,8 @@ const ProfileModal = ({ isOpen, onClose }) => {
                             onClick={() => fileInputRef.current?.click()}
                         >
                             <div className="w-24 h-24 rounded-full bg-brand-mint/20 flex items-center justify-center border-2 border-brand-mint/50 shadow-[0_0_20px_rgba(6,182,212,0.2)] overflow-hidden">
-                                {displayPhoto ? (
-                                    <img src={displayPhoto} alt="Profile" className="w-full h-full object-cover" />
+                                {profilePhoto ? (
+                                    <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
                                 ) : (
                                     <span className="text-brand-mint text-3xl font-bold">
                                         {user?.username?.charAt(0).toUpperCase() || '?'}
@@ -191,11 +321,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
                             </div>
                             {/* Hover overlay */}
                             <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                {isUploading ? (
-                                    <Loader2 className="w-6 h-6 text-white animate-spin" />
-                                ) : (
-                                    <Camera className="w-6 h-6 text-white" />
-                                )}
+                                <Camera className="w-6 h-6 text-white" />
                             </div>
                             <input
                                 ref={fileInputRef}
@@ -205,7 +331,7 @@ const ProfileModal = ({ isOpen, onClose }) => {
                                 onChange={handlePhotoSelect}
                             />
                         </div>
-                        <p className="text-[10px] text-gray-500 font-mono mt-2">CLICK TO UPLOAD PHOTO (MAX 2MB)</p>
+                        <p className="text-[10px] text-gray-500 font-mono mt-2">CLICK TO UPLOAD & CROP PHOTO</p>
                         <p className="text-sm text-gray-400 font-mono mt-1">{user?.email}</p>
                         <div className="flex items-center gap-1 mt-1">
                             <Shield size={12} className={user?.trust_score > 90 ? "text-brand-mint" : "text-amber-500"} />

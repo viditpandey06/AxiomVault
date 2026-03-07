@@ -107,13 +107,139 @@ const useChatStore = create(persist((set, get) => ({
         }
     },
 
+    // Google OAuth — Step 1: authenticate with Google
+    googleLogin: async (credential) => {
+        set({ isAuthLoading: true, authError: null });
+        try {
+            const res = await fetch('http://localhost:5000/api/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential })
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || 'Google authentication failed');
+
+            if (data.isNewUser) {
+                // New user — need passphrase to generate keys
+                // Store token temporarily so we can call set-keys endpoint
+                localStorage.setItem('chat_token', data.token);
+                set({
+                    token: data.token,
+                    user: data.user,
+                    isAuthLoading: false
+                });
+                return { isNewUser: true, email: data.user.email };
+            } else {
+                // Returning user — need passphrase to decrypt existing keys
+                // Store data temporarily, actual login completes after passphrase
+                set({
+                    isAuthLoading: false,
+                    _pendingGoogleData: data
+                });
+                return { isNewUser: false, email: data.user.email };
+            }
+        } catch (err) {
+            set({ authError: err.message, isAuthLoading: false });
+            return null;
+        }
+    },
+
+    // Google OAuth — Step 2a: new user creates passphrase & keys
+    completeGoogleSignup: async (passphrase, email) => {
+        set({ isAuthLoading: true, authError: null });
+        try {
+            const { token } = get();
+
+            // 1. Generate RSA Key Pair
+            const keyPair = await generateRSAKeyPair();
+
+            // 2. Export Public Key
+            const exportedPublicKey = await exportPublicKey(keyPair.publicKey);
+
+            // 3. Derive AES key from passphrase
+            const aesKey = await deriveKeyFromPassphrase(passphrase, email);
+
+            // 4. Encrypt Private Key
+            const encryptedPrivateKeyBase64 = await encryptPrivateKey(keyPair.privateKey, aesKey);
+
+            // 5. Send keys to server
+            const res = await fetch('http://localhost:5000/api/auth/set-keys', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    public_key: exportedPublicKey,
+                    encrypted_private_key: encryptedPrivateKeyBase64
+                })
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || 'Failed to set keys');
+
+            // 6. Store JWK in session
+            const jwk = await exportPrivateKeyJWK(keyPair.privateKey);
+            sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
+            sessionStorage.setItem('chat_user', JSON.stringify(data.user));
+
+            set({
+                user: data.user,
+                privateKey: keyPair.privateKey,
+                isAuthLoading: false
+            });
+            return true;
+        } catch (err) {
+            set({ authError: err.message, isAuthLoading: false });
+            return false;
+        }
+    },
+
+    // Google OAuth — Step 2b: returning user enters passphrase to decrypt keys
+    completeGoogleLogin: async (passphrase) => {
+        set({ isAuthLoading: true, authError: null });
+        try {
+            const pending = get()._pendingGoogleData;
+            if (!pending) throw new Error('No pending Google data');
+
+            const { token, user } = pending;
+
+            // 1. Derive AES key from passphrase
+            const aesKey = await deriveKeyFromPassphrase(passphrase, user.email);
+
+            // 2. Decrypt private key
+            const myPrivateKey = await decryptPrivateKey(user.encrypted_private_key, aesKey);
+
+            // 3. Store in session
+            const jwk = await exportPrivateKeyJWK(myPrivateKey);
+            sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
+            sessionStorage.setItem('chat_user', JSON.stringify(user));
+
+            localStorage.setItem('chat_token', token);
+            set({
+                user: user,
+                token: token,
+                privateKey: myPrivateKey,
+                isAuthLoading: false,
+                _pendingGoogleData: null
+            });
+            return true;
+        } catch (err) {
+            set({ authError: err.message, isAuthLoading: false });
+            return false;
+        }
+    },
+
+    _pendingGoogleData: null,
+
     logout: () => {
         const { disconnectSocket } = get();
         disconnectSocket();
         localStorage.removeItem('chat_token');
         sessionStorage.removeItem('chat_priv_key_jwk');
         sessionStorage.removeItem('chat_user');
-        set({ user: null, token: null, privateKey: null });
+        set({ user: null, token: null, privateKey: null, _pendingGoogleData: null });
     },
 
     // Session Restoration
