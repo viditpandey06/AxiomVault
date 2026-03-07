@@ -332,9 +332,35 @@ const useChatStore = create(persist((set, get) => ({
                     };
                     addMessage(chatId, formattedMessage);
 
-                    const isNewContact = !get().chats.find(c => c.id === chatId);
+                    const { chats, addMessage, token } = get();
+                    const isNewContact = !chats.find(c => c.id === chatId);
+
                     if (isNewContact) {
-                        get().fetchChats();
+                        try {
+                            const userRes = await fetch(`${API_URL}/api/users/profile/${chatId}`, {
+                                headers: { 'Authorization': `Bearer ${token}` }
+                            });
+                            if (userRes.ok) {
+                                const senderProfile = await userRes.json();
+                                const newChatObject = {
+                                    id: senderProfile._id,
+                                    name: senderProfile.username,
+                                    publicKey: senderProfile.public_key,
+                                    profilePhoto: senderProfile.profile_photo,
+                                    status: senderProfile.status,
+                                    lastActivity: incomingMsg.timestamp,
+                                    isGroup: false
+                                };
+
+                                set({
+                                    chats: [newChatObject, ...chats],
+                                    // Optionally auto-focus if no active chat
+                                    activeChatId: get().activeChatId || newChatObject.id
+                                });
+                            }
+                        } catch (contactErr) {
+                            console.error("Failed to fetch new contact profile", contactErr);
+                        }
                     }
 
                     if (get().activeChatId !== chatId) {

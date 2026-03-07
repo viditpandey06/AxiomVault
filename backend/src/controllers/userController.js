@@ -140,6 +140,20 @@ exports.updateProfile = async (req, res) => {
     }
 };
 
+exports.getUserProfileById = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id)
+            .select('username public_key _id trust_score profile_photo status');
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.json(user);
+    } catch (err) {
+        console.error("Get user profile by ID error:", err);
+        res.status(500).json({ error: 'Server error' });
+    }
+};
+
 exports.uploadPhoto = async (req, res) => {
     try {
         if (!req.file) {

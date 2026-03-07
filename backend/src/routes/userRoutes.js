@@ -21,6 +21,7 @@ router.get('/search', authMiddleware, userController.searchUsers);
 router.get('/chats', authMiddleware, userController.getUserChats);
 router.get('/messages/:id', authMiddleware, userController.getChatHistory);
 router.get('/profile', authMiddleware, userController.getProfile);
+router.get('/profile/:id', authMiddleware, userController.getUserProfileById);
 router.put('/profile', authMiddleware, userController.updateProfile);
 router.post('/profile/photo', authMiddleware, upload.single('photo'), userController.uploadPhoto);
 router.get('/:id/public_key', authMiddleware, userController.getPublicKey);
