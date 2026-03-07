@@ -7,7 +7,9 @@ module.exports = (io, socket) => {
     // Direct Message
     socket.on('send_private_message', async (data, callback) => {
         try {
+            console.log(`\n--- INCOMING MESSAGE PAYLOAD FROM: ${socket.user.username} ---`);
             const { receiver_id, ciphertext, encrypted_aes_key } = data;
+            console.log(`Target Receiver ID: ${receiver_id}`);
 
             const message = new PrivateMessage({
                 sender_id: socket.user._id,
@@ -20,35 +22,42 @@ module.exports = (io, socket) => {
 
             // Check if receiver is online
             const receiverSocketId = await redisClient.get(`user_socket:${receiver_id}`);
+            console.log(`Redis Lookup for 'user_socket:${receiver_id}': ${receiverSocketId}`);
+
             if (receiverSocketId) {
+                console.log(`SUCCESS: Emitting to ${receiverSocketId}`);
                 io.to(receiverSocketId).emit('receive_private_message', message);
+            } else {
+                console.log(`FAILED: Receiver ${receiver_id} is offline or not found in Redis`);
             }
 
             callback({ status: 'ok', message });
 
-            // BACKGROUND: AI Moderation
-            try {
-                const spamScore = await aiService.analyzeUserMetadata(socket.user._id);
-                const user = await User.findById(socket.user._id);
+            // BACKGROUND: AI Moderation (Detached from main thread)
+            setTimeout(async () => {
+                try {
+                    const spamScore = await aiService.analyzeUserMetadata(socket.user._id);
+                    const user = await User.findById(socket.user._id);
 
-                // Apply penalty if spammy (up to 20 pts per message)
-                const penalty = Math.round(spamScore * 20);
-                if (penalty > 0) {
-                    user.trust_score = Math.max(0, user.trust_score - penalty);
+                    // Apply penalty if spammy (up to 20 pts per message)
+                    const penalty = Math.round(spamScore * 20);
+                    if (penalty > 0) {
+                        user.trust_score = Math.max(0, user.trust_score - penalty);
+                    }
+
+                    // Gradual recovery: +2 points per normal message (spamScore < 0.2)
+                    if (spamScore < 0.2 && user.trust_score < 100) {
+                        user.trust_score = Math.min(100, user.trust_score + 2);
+                    }
+
+                    await user.save();
+
+                    // Always emit so frontend UI stays synced
+                    socket.emit('trust_score_updated', { trust_score: user.trust_score });
+                } catch (aiErr) {
+                    console.error("Background AI processing error:", aiErr);
                 }
-
-                // Gradual recovery: +2 points per normal message (spamScore < 0.2)
-                if (spamScore < 0.2 && user.trust_score < 100) {
-                    user.trust_score = Math.min(100, user.trust_score + 2);
-                }
-
-                await user.save();
-
-                // Always emit so frontend UI stays synced
-                socket.emit('trust_score_updated', { trust_score: user.trust_score });
-            } catch (aiErr) {
-                console.error("Background AI processing error:", aiErr);
-            }
+            }, 0);
 
         } catch (err) {
             console.error(err);
