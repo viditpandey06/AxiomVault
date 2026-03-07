@@ -39,10 +39,10 @@ const useChatStore = create(persist((set, get) => ({
             // 2. Decrypt the Private Key into memory
             const myPrivateKey = await decryptPrivateKey(data.user.encrypted_private_key, aesKey);
 
-            // 3. Export to JWK and store in sessionStorage so it survives refresh
+            // 3. Export to JWK and store in localStorage so it survives refresh/mobile backgrounding
             const jwk = await exportPrivateKeyJWK(myPrivateKey);
-            sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
-            sessionStorage.setItem('chat_user', JSON.stringify(data.user));
+            localStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
+            localStorage.setItem('chat_user', JSON.stringify(data.user));
 
             localStorage.setItem('chat_token', data.token);
             set({
@@ -84,8 +84,8 @@ const useChatStore = create(persist((set, get) => ({
             if (!res.ok) throw new Error(data.error || 'Signup failed');
 
             const jwk = await exportPrivateKeyJWK(keyPair.privateKey);
-            sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
-            sessionStorage.setItem('chat_user', JSON.stringify(data.user));
+            localStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
+            localStorage.setItem('chat_user', JSON.stringify(data.user));
 
             localStorage.setItem('chat_token', data.token);
             set({
@@ -162,8 +162,8 @@ const useChatStore = create(persist((set, get) => ({
             if (!res.ok) throw new Error(data.error || 'Failed to set keys');
 
             const jwk = await exportPrivateKeyJWK(keyPair.privateKey);
-            sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
-            sessionStorage.setItem('chat_user', JSON.stringify(data.user));
+            localStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
+            localStorage.setItem('chat_user', JSON.stringify(data.user));
 
             set({
                 user: data.user,
@@ -190,8 +190,8 @@ const useChatStore = create(persist((set, get) => ({
             const myPrivateKey = await decryptPrivateKey(user.encrypted_private_key, aesKey);
 
             const jwk = await exportPrivateKeyJWK(myPrivateKey);
-            sessionStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
-            sessionStorage.setItem('chat_user', JSON.stringify(user));
+            localStorage.setItem('chat_priv_key_jwk', JSON.stringify(jwk));
+            localStorage.setItem('chat_user', JSON.stringify(user));
 
             localStorage.setItem('chat_token', token);
             set({
@@ -216,9 +216,9 @@ const useChatStore = create(persist((set, get) => ({
 
         // Remove auth tokens
         localStorage.removeItem('chat_token');
-        sessionStorage.removeItem('chat_priv_key_jwk');
-        sessionStorage.removeItem('chat_user');
-        sessionStorage.removeItem('freeze_expires_at');
+        localStorage.removeItem('chat_priv_key_jwk');
+        localStorage.removeItem('chat_user');
+        localStorage.removeItem('freeze_expires_at');
 
         // Wipe all internal chat state
         set({
@@ -241,8 +241,8 @@ const useChatStore = create(persist((set, get) => ({
     // Session Restoration
     restoreSession: async () => {
         const token = localStorage.getItem('chat_token');
-        const jwkString = sessionStorage.getItem('chat_priv_key_jwk');
-        const userString = sessionStorage.getItem('chat_user');
+        const jwkString = localStorage.getItem('chat_priv_key_jwk');
+        const userString = localStorage.getItem('chat_user');
 
         if (token && jwkString && userString) {
             try {
@@ -257,13 +257,13 @@ const useChatStore = create(persist((set, get) => ({
                 });
 
                 // Check if there's an active freeze that should survive refresh
-                const freezeExpiry = sessionStorage.getItem('freeze_expires_at');
+                const freezeExpiry = localStorage.getItem('freeze_expires_at');
                 if (freezeExpiry) {
                     const remaining = Math.ceil((parseInt(freezeExpiry) - Date.now()) / 1000);
                     if (remaining > 0) {
                         set({ isFrozen: true, freezeTimeLeft: remaining });
                     } else {
-                        sessionStorage.removeItem('freeze_expires_at');
+                        localStorage.removeItem('freeze_expires_at');
                     }
                 }
 
@@ -354,13 +354,13 @@ const useChatStore = create(persist((set, get) => ({
             if (user) {
                 const updatedUser = { ...user, trust_score: data.trust_score };
                 set({ user: updatedUser });
-                if (sessionStorage.getItem('chat_user')) {
-                    sessionStorage.setItem('chat_user', JSON.stringify(updatedUser));
+                if (localStorage.getItem('chat_user')) {
+                    localStorage.setItem('chat_user', JSON.stringify(updatedUser));
                 }
 
                 if (data.trust_score <= 0 && !get().isFrozen) {
                     const expiresAt = Date.now() + 60000;
-                    sessionStorage.setItem('freeze_expires_at', expiresAt.toString());
+                    localStorage.setItem('freeze_expires_at', expiresAt.toString());
                     set({ isFrozen: true, freezeTimeLeft: 60 });
                 }
             }
@@ -372,8 +372,8 @@ const useChatStore = create(persist((set, get) => ({
             if (user) {
                 const updatedUser = { ...user, trust_score: data.trust_score };
                 set({ user: updatedUser, isFrozen: false, freezeTimeLeft: 0 });
-                if (sessionStorage.getItem('chat_user')) {
-                    sessionStorage.setItem('chat_user', JSON.stringify(updatedUser));
+                if (localStorage.getItem('chat_user')) {
+                    localStorage.setItem('chat_user', JSON.stringify(updatedUser));
                 }
             }
         });
@@ -627,15 +627,15 @@ const useChatStore = create(persist((set, get) => ({
     // Freeze Actions
     completeFreeze: () => {
         const { socket } = get();
-        sessionStorage.removeItem('freeze_expires_at');
+        localStorage.removeItem('freeze_expires_at');
         if (socket && socket.connected) {
             socket.emit('request_trust_reset', {}, (response) => {
                 const { user } = get();
                 const newScore = response?.status === 'ok' ? response.trust_score : 50;
                 const updatedUser = { ...user, trust_score: newScore };
                 set({ user: updatedUser, isFrozen: false, freezeTimeLeft: 0 });
-                if (sessionStorage.getItem('chat_user')) {
-                    sessionStorage.setItem('chat_user', JSON.stringify(updatedUser));
+                if (localStorage.getItem('chat_user')) {
+                    localStorage.setItem('chat_user', JSON.stringify(updatedUser));
                 }
             });
             setTimeout(() => {
