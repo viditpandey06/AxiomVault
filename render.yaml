@@ -1,0 +1,27 @@
+services:
+  # Python AI Moderation Web Service
+  - type: web
+    name: axiomvault-ai-service
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    rootDir: ai-service
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+
+  # Node JS Backend API
+  - type: web
+    name: axiomvault-backend
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    rootDir: backend
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: axiomvault-ai-service
+          envVarKey: RENDER_EXTERNAL_URL

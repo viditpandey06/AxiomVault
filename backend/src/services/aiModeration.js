@@ -56,7 +56,13 @@ exports.analyzeUserMetadata = async (userId) => {
         };
 
         // Call the FastAPI Python service
-        const response = await axios.post(`${AI_SERVICE_URL}/analyze`, payload);
+        const response = await axios.post(`${AI_SERVICE_URL}/analyze`, payload, {
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            timeout: 10000 // 10 second timeout for cold starts
+        });
 
         if (response.data && response.data.spam_score !== undefined) {
             return response.data.spam_score;
@@ -66,7 +72,14 @@ exports.analyzeUserMetadata = async (userId) => {
         return 0;
 
     } catch (err) {
-        console.error("AI Service Call Failed:", err.message);
+        if (err.response) {
+            console.error(`AI API Error (${err.response.status}):`, err.response.data);
+        } else if (err.request) {
+            console.error("AI API No Response (Timeout/Network):", err.message);
+        } else {
+            console.error("AI API Request Setup Error:", err.message);
+        }
+
         // Fail open: don't penalize user if AI service is down
         return 0;
     }

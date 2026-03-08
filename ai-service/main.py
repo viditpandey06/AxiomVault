@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import numpy as np
 import pandas as pd
@@ -7,6 +8,14 @@ import uvicorn
 import datetime
 
 app = FastAPI(title="Encrypted Chat AI Moderation Service")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Isolation Forest Model Initialization (for simplicity, we train an initial baseline model)
 # In production, this would be loaded from a saved pkl file or retrained periodically.
