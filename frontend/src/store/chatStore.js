@@ -297,6 +297,13 @@ const useChatStore = create(persist((set, get) => ({
         newSocket.on('connect', () => {
             console.log('Socket connected:', newSocket.id);
             set({ isConnected: true });
+
+            // Re-sync data in case we missed events while disconnected/backgrounded (mobile constraints)
+            const { activeChatId, loadChatHistory, fetchChats } = get();
+            if (activeChatId) {
+                loadChatHistory(activeChatId);
+            }
+            fetchChats();
         });
 
         newSocket.on('disconnect', () => {
@@ -345,7 +352,7 @@ const useChatStore = create(persist((set, get) => ({
                                 const newChatObject = {
                                     id: senderProfile._id,
                                     name: senderProfile.username,
-                                    publicKey: senderProfile.public_key,
+                                    publicKey: senderProfile.public_key, // The backend sends base64 without wrapping, but if it has newlines, importPublicKey breaks
                                     profilePhoto: senderProfile.profile_photo,
                                     status: senderProfile.status,
                                     lastActivity: incomingMsg.timestamp,
@@ -428,7 +435,7 @@ const useChatStore = create(persist((set, get) => ({
         };
         addMessage(receiverId, newMessage);
 
-        if (socket && socket.connected) {
+        if (socket) {
             try {
                 let targetContact = chats.find(c => c.id === receiverId);
                 let receiverPublicKeyBase64 = targetContact?.publicKey;
@@ -450,7 +457,9 @@ const useChatStore = create(persist((set, get) => ({
                     throw new Error("Missing receiver public key");
                 }
 
-                const receiverPublicKey = await importPublicKey(receiverPublicKeyBase64);
+                // Clean the base64 string before importing (removes newlines which crash WebCrypto)
+                const cleanKey = receiverPublicKeyBase64.replace(/\n|\r/g, '');
+                const receiverPublicKey = await importPublicKey(cleanKey);
                 const messageKey = await generateMessageKey();
                 const ciphertext = await encryptPayload(text, messageKey);
                 const wrappedAesKey = await wrapMessageKey(messageKey, receiverPublicKey);
@@ -478,7 +487,7 @@ const useChatStore = create(persist((set, get) => ({
                 updateMessageStatus(receiverId, tempId, 'encryption error');
             }
         } else {
-            updateMessageStatus(receiverId, tempId, 'error: not connected');
+            updateMessageStatus(receiverId, tempId, 'error: no socket');
         }
     },
 
