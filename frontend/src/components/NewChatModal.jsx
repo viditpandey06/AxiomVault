@@ -20,6 +20,11 @@ const NewChatModal = ({ isOpen, onClose }) => {
     const [selectedMembers, setSelectedMembers] = useState([]); // Array of user objects
     const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
+    // View Profile State
+    const [viewingProfileId, setViewingProfileId] = useState(null);
+    const [viewingProfileData, setViewingProfileData] = useState(null);
+    const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+
     const handleSearch = async (e) => {
         const query = e.target.value;
         setSearchQuery(query);
@@ -42,6 +47,31 @@ const NewChatModal = ({ isOpen, onClose }) => {
             console.error("Search error:", err);
         } finally {
             setIsSearching(false);
+        }
+    };
+
+    const viewProfile = async (targetUserId) => {
+        if (viewingProfileId === targetUserId) {
+            setViewingProfileId(null);
+            setViewingProfileData(null);
+            return;
+        }
+
+        setViewingProfileId(targetUserId);
+        setIsLoadingProfile(true);
+
+        try {
+            const res = await fetch(`${API_URL}/api/users/profile/${targetUserId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setViewingProfileData(data);
+            }
+        } catch (err) {
+            console.error("Profile fetch error:", err);
+        } finally {
+            setIsLoadingProfile(false);
         }
     };
 
@@ -204,43 +234,74 @@ const NewChatModal = ({ isOpen, onClose }) => {
                     {/* Results List */}
                     <div className="flex-1 overflow-y-auto space-y-2">
                         {searchResults.map(user => (
-                            <div key={user._id} className="flex items-center justify-between p-3 bg-gray-800/40 rounded border border-gray-800 hover:border-brand-mint/30 transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center border border-gray-600 overflow-hidden">
-                                        {user.profile_photo ? (
-                                            <img src={user.profile_photo} alt={user.username} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <UserPlus size={14} className="text-gray-400" />
-                                        )}
-                                    </div>
-                                    <div>
-                                        <p className="text-white text-sm font-medium">{user.username}</p>
-                                        <div className="flex items-center gap-1 text-[10px] text-gray-500 font-mono mt-0.5">
-                                            <Shield size={10} className={user.trust_score > 90 ? "text-brand-mint" : "text-amber-500"} />
-                                            Trust: {user.trust_score}%
+                            <div key={user._id} className="flex flex-col p-3 bg-gray-800/40 rounded border border-gray-800 hover:border-brand-mint/30 transition-colors">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center border border-gray-600 overflow-hidden">
+                                            {user.profile_photo ? (
+                                                <img src={user.profile_photo} alt={user.username} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <UserPlus size={14} className="text-gray-400" />
+                                            )}
+                                        </div>
+                                        <div>
+                                            <p className="text-white text-sm font-medium">{user.username}</p>
+                                            <div className="flex items-center gap-1 text-[10px] text-gray-500 font-mono mt-0.5">
+                                                <Shield size={10} className={user.trust_score > 90 ? "text-brand-mint" : "text-amber-500"} />
+                                                Trust: {user.trust_score}%
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                {tab === 'direct' ? (
-                                    <button
-                                        onClick={() => startDirectChat(user)}
-                                        className="px-3 py-1 bg-brand-mint/10 text-brand-mint hover:bg-brand-mint hover:text-black font-mono text-xs rounded transition-colors"
-                                    >
-                                        CONNECT
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => toggleMemberSelection(user)}
-                                        className={clsx(
-                                            "w-6 h-6 rounded flex items-center justify-center transition-colors border",
-                                            selectedMembers.find(m => m._id === user._id)
-                                                ? "bg-brand-mint border-brand-mint text-black"
-                                                : "bg-transparent border-gray-600 text-gray-400 hover:border-brand-mint"
+                                    {tab === 'direct' ? (
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => viewProfile(user._id)}
+                                                className="px-3 py-1 bg-gray-800 text-gray-300 hover:bg-gray-700 font-mono text-xs rounded transition-colors border border-gray-700"
+                                            >
+                                                {viewingProfileId === user._id ? 'HIDE PROFILE' : 'VIEW PROFILE'}
+                                            </button>
+                                            <button
+                                                onClick={() => startDirectChat(user)}
+                                                className="px-3 py-1 bg-brand-mint/10 text-brand-mint hover:bg-brand-mint hover:text-black font-mono text-xs rounded transition-colors"
+                                            >
+                                                CONNECT
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => toggleMemberSelection(user)}
+                                            className={clsx(
+                                                "w-6 h-6 rounded flex items-center justify-center transition-colors border",
+                                                selectedMembers.find(m => m._id === user._id)
+                                                    ? "bg-brand-mint border-brand-mint text-black"
+                                                    : "bg-transparent border-gray-600 text-gray-400 hover:border-brand-mint"
+                                            )}
+                                        >
+                                            {selectedMembers.find(m => m._id === user._id) ? <X size={14} /> : <Plus size={14} />}
+                                        </button>
+                                    )}
+                                </div>
+                                {tab === 'direct' && viewingProfileId === user._id && (
+                                    <div className="mt-3 p-3 bg-gray-900 rounded border border-gray-700 font-mono text-gray-300">
+                                        {isLoadingProfile ? (
+                                            <div className="flex items-center gap-2 text-gray-500 justify-center py-2 text-xs">
+                                                <Loader2 size={14} className="animate-spin" />
+                                                <span>FETCHING PROFILE...</span>
+                                            </div>
+                                        ) : viewingProfileData ? (
+                                            <div className="space-y-2 text-xs">
+                                                <p><span className="text-gray-500">AGE:</span> {viewingProfileData.age || 'UNKNOWN'}</p>
+                                                <p><span className="text-gray-500">GENDER:</span> {viewingProfileData.gender?.toUpperCase() || 'UNKNOWN'}</p>
+                                                <p><span className="text-gray-500">BIO:</span> {viewingProfileData.bio || 'NO BIO PROVIDED'}</p>
+                                                {viewingProfileData.status && (
+                                                    <p><span className="text-gray-500">STATUS:</span> {viewingProfileData.status}</p>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="text-red-400 text-center py-2 text-xs">FAILED TO LOAD PROFILE</div>
                                         )}
-                                    >
-                                        {selectedMembers.find(m => m._id === user._id) ? <X size={14} /> : <Plus size={14} />}
-                                    </button>
+                                    </div>
                                 )}
                             </div>
                         ))}
