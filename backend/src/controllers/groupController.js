@@ -81,3 +81,32 @@ exports.getGroupKey = async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 };
+
+exports.getGroupChatHistory = async (req, res) => {
+    try {
+        const groupId = req.params.id;
+        const userId = req.user._id;
+
+        // Verify user is in group
+        const group = await Group.findOne({ _id: groupId, members: userId });
+        if (!group) return res.status(403).json({ error: 'Not authorized or group not found' });
+
+        const messages = await PrivateMessage.find({ group_id: groupId })
+            .sort({ timestamp: 1 })
+            .limit(100);
+
+        // Map them to the same structure expected by the frontend (sender_id, ciphertext, encrypted_aes_key)
+        // Note: For groups we don't return encrypted_aes_key per message because the UI uses the shared group key
+        // But we DO need to query the GroupMessage collection, NOT PrivateMessage!
+
+        const groupMessages = await GroupMessage.find({ group_id: groupId })
+            .sort({ timestamp: 1 })
+            .limit(100);
+
+        res.json(groupMessages);
+
+    } catch (err) {
+        console.error("Get group chat history error:", err);
+        res.status(500).json({ error: 'Server error' });
+    }
+};

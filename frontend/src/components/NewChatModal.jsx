@@ -114,7 +114,8 @@ const NewChatModal = ({ isOpen, onClose }) => {
             // 3. Wrap Group Key for every member
             const wrappedKeys = {};
             for (const member of allMembers) {
-                const memberPubKey = await importPublicKey(member.public_key);
+                const cleanKey = member.public_key.replace(/\n|\r/g, '');
+                const memberPubKey = await importPublicKey(cleanKey);
                 const encryptedKeyBase64 = await wrapMessageKey(groupKey, memberPubKey);
                 wrappedKeys[member._id] = encryptedKeyBase64;
             }

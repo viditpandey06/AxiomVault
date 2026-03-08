@@ -300,6 +300,10 @@ const useChatStore = create(persist((set, get) => ({
 
             // Re-sync data in case we missed events while disconnected/backgrounded (mobile constraints)
             const { activeChatId, loadChatHistory, fetchChats } = get();
+
+            // Re-join any group rooms we belong to
+            newSocket.emit('join_groups');
+
             if (activeChatId) {
                 loadChatHistory(activeChatId);
             }
@@ -399,6 +403,70 @@ const useChatStore = create(persist((set, get) => ({
             }
         });
 
+        // Listen for new group added
+        newSocket.on('group_added', (group) => {
+            console.log("👥 [SOCKET] Added to new group:", group.group_name);
+            const newGroup = {
+                id: group._id,
+                name: group.group_name,
+                adminId: group.admin_id,
+                lastActivity: new Date().toISOString(),
+                isGroup: true
+            };
+
+            newSocket.emit('join_groups'); // Ensure we join the new group's socket room
+
+            const { chats } = get();
+            set({
+                chats: [newGroup, ...chats]
+            });
+        });
+
+        // Listen for incoming group messages
+        newSocket.on('receive_group_message', async (incomingMsg) => {
+            console.log("📥 [SOCKET] Received raw group message payload:", incomingMsg);
+            const { privateKey, addMessage, token } = get();
+            const groupId = incomingMsg.group_id;
+
+            try {
+                if (privateKey) {
+                    // Fetch my wrapped copy of the AES group key
+                    const keyRes = await fetch(`${API_URL}/api/groups/${groupId}/key`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (keyRes.ok) {
+                        const groupKeyObj = await keyRes.json();
+
+                        console.log(`🔐 [CRYPTO] Attempting to unwrap AES key for group ${groupId}...`);
+                        const groupAesKey = await unwrapMessageKey(groupKeyObj.encrypted_group_key, privateKey);
+
+                        console.log(`🔓 [CRYPTO] Group AES Key unwrapped. Decrypting payload...`);
+                        const plaintext = await decryptPayload(incomingMsg.ciphertext, groupAesKey);
+                        console.log(`✅ [SUCCESS] Group Payload decrypted: ${plaintext}`);
+
+                        const formattedMessage = {
+                            id: incomingMsg._id || Date.now().toString(),
+                            text: plaintext,
+                            isSent: false, // The message might be from us if connected on another device, but typically false
+                            status: 'encrypted',
+                            timestamp: new Date(incomingMsg.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                        };
+                        addMessage(groupId, formattedMessage);
+
+                        if (get().activeChatId !== groupId) {
+                            get().incrementUnreadCount(groupId);
+                        }
+                    } else {
+                        console.error("Failed to fetch group key for incoming message");
+                    }
+                } else {
+                    console.error("No private key in memory to decrypt incoming group message.");
+                }
+            } catch (err) {
+                console.error("Failed to decrypt incoming group message:", err);
+            }
+        });
+
         // Listen for trust reset confirmation from server
         newSocket.on('trust_reset_complete', (data) => {
             const { user } = get();
@@ -438,42 +506,72 @@ const useChatStore = create(persist((set, get) => ({
         if (socket) {
             try {
                 let targetContact = chats.find(c => c.id === receiverId);
-                let receiverPublicKeyBase64 = targetContact?.publicKey;
+                const isGroup = targetContact?.isGroup;
 
-                if (!receiverPublicKeyBase64) {
-                    const { token } = get();
-                    const res = await fetch(`${API_URL}/api/users/${receiverId}/public_key`, {
+                let payload = {};
+                let eventName = '';
+
+                if (isGroup) {
+                    // Group Message flow
+                    const { token, privateKey } = get();
+                    const keyRes = await fetch(`${API_URL}/api/groups/${receiverId}/key`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
-                    if (res.ok) {
-                        const data = await res.json();
-                        receiverPublicKeyBase64 = data.public_key;
-                    } else {
-                        throw new Error("Failed to fetch receiver public key");
+                    if (!keyRes.ok) throw new Error("Failed to fetch group key");
+                    const groupKeyObj = await keyRes.json();
+
+                    // Unwrap the group AES key
+                    const groupAesKey = await unwrapMessageKey(groupKeyObj.encrypted_group_key, privateKey);
+
+                    // Encrypt payload directly with group AES key
+                    const ciphertext = await encryptPayload(text, groupAesKey);
+
+                    payload = {
+                        group_id: receiverId,
+                        ciphertext: ciphertext
+                    };
+                    eventName = 'send_group_message';
+
+                } else {
+                    // Private Message flow
+                    let receiverPublicKeyBase64 = targetContact?.publicKey;
+
+                    if (!receiverPublicKeyBase64) {
+                        const { token } = get();
+                        const res = await fetch(`${API_URL}/api/users/${receiverId}/public_key`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            receiverPublicKeyBase64 = data.public_key;
+                        } else {
+                            throw new Error("Failed to fetch receiver public key");
+                        }
                     }
+
+                    if (!receiverPublicKeyBase64) {
+                        throw new Error("Missing receiver public key");
+                    }
+
+                    // Clean the base64 string before importing (removes newlines which crash WebCrypto)
+                    const cleanKey = receiverPublicKeyBase64.replace(/\n|\r/g, '');
+                    const receiverPublicKey = await importPublicKey(cleanKey);
+                    const messageKey = await generateMessageKey();
+                    const ciphertext = await encryptPayload(text, messageKey);
+                    const wrappedAesKey = await wrapMessageKey(messageKey, receiverPublicKey);
+
+                    payload = {
+                        receiver_id: receiverId,
+                        ciphertext: ciphertext,
+                        encrypted_aes_key: wrappedAesKey
+                    };
+                    eventName = 'send_private_message';
                 }
-
-                if (!receiverPublicKeyBase64) {
-                    throw new Error("Missing receiver public key");
-                }
-
-                // Clean the base64 string before importing (removes newlines which crash WebCrypto)
-                const cleanKey = receiverPublicKeyBase64.replace(/\n|\r/g, '');
-                const receiverPublicKey = await importPublicKey(cleanKey);
-                const messageKey = await generateMessageKey();
-                const ciphertext = await encryptPayload(text, messageKey);
-                const wrappedAesKey = await wrapMessageKey(messageKey, receiverPublicKey);
-
-                const payload = {
-                    receiver_id: receiverId,
-                    ciphertext: ciphertext,
-                    encrypted_aes_key: wrappedAesKey
-                };
 
                 setTimeout(() => {
                     updateMessageStatus(receiverId, tempId, 'safe');
 
-                    socket.emit('send_private_message', payload, (response) => {
+                    socket.emit(eventName, payload, (response) => {
                         if (response.status === 'ok') {
                             updateMessageStatus(receiverId, tempId, 'encrypted');
                         } else {
@@ -580,9 +678,30 @@ const useChatStore = create(persist((set, get) => ({
         if (!token || !privateKey) return;
 
         try {
-            const res = await fetch(`${API_URL}/api/messages/${chatId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            let res;
+            let groupKeyObj = null;
+
+            // Check if this chat is a group or DM
+            const targetChat = get().chats.find(c => c.id === chatId);
+            const isGroup = targetChat?.isGroup;
+
+            if (isGroup) {
+                res = await fetch(`${API_URL}/api/groups/${chatId}/messages`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                // Fetch my wrapped copy of the AES group key
+                const keyRes = await fetch(`${API_URL}/api/groups/${chatId}/key`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (keyRes.ok) {
+                    groupKeyObj = await keyRes.json();
+                }
+            } else {
+                res = await fetch(`${API_URL}/api/messages/${chatId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            }
 
             if (!res.ok) throw new Error("Failed to fetch chat history");
 
@@ -591,7 +710,17 @@ const useChatStore = create(persist((set, get) => ({
 
             for (const msg of rawMessages) {
                 try {
-                    const messageKey = await unwrapMessageKey(msg.encrypted_aes_key, privateKey);
+                    let messageKey;
+
+                    if (isGroup) {
+                        if (!groupKeyObj) throw new Error("Missing group encryption key");
+                        // Decrypt AES key for the group using my private key
+                        messageKey = await unwrapMessageKey(groupKeyObj.encrypted_group_key, privateKey);
+                    } else {
+                        // Decrypt individual message AES key
+                        messageKey = await unwrapMessageKey(msg.encrypted_aes_key, privateKey);
+                    }
+
                     const plaintext = await decryptPayload(msg.ciphertext, messageKey);
 
                     decryptedMessages.push({
