@@ -1,5 +1,6 @@
 const axios = require('axios');
 const PrivateMessage = require('../models/PrivateMessage');
+const GroupMessage = require('../models/GroupMessage');
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
 
@@ -17,18 +18,31 @@ exports.analyzeUserMetadata = async (userId) => {
         const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
         // 1. Calculate message_rate_per_min (messages in the last 60 seconds)
-        const messagesLastMin = await PrivateMessage.countDocuments({
+        const privateMessagesLastMin = await PrivateMessage.countDocuments({
             sender_id: userId,
             timestamp: { $gte: oneMinAgo }
         });
+        const groupMessagesLastMin = await GroupMessage.countDocuments({
+            sender_id: userId,
+            timestamp: { $gte: oneMinAgo }
+        });
+        const messagesLastMin = privateMessagesLastMin + groupMessagesLastMin;
 
         // 2. Calculate unique_receivers_24h
-        const messagesLastDay = await PrivateMessage.find({
+        const privateMessagesLastDay = await PrivateMessage.find({
             sender_id: userId,
             timestamp: { $gte: oneDayAgo }
         }).select('receiver_id');
 
-        const uniqueReceivers = new Set(messagesLastDay.map(m => m.receiver_id.toString())).size;
+        const groupMessagesLastDay = await GroupMessage.find({
+            sender_id: userId,
+            timestamp: { $gte: oneDayAgo }
+        }).select('group_id');
+
+        const uniqueReceivers = new Set([
+            ...privateMessagesLastDay.map(m => m.receiver_id.toString()),
+            ...groupMessagesLastDay.map(m => `group_${m.group_id.toString()}`)
+        ]).size;
 
         // Note: ip_changes_7d and reports_received require more tracking. 
         // For now, we mock them to 0 as placeholders for the AI input, 
