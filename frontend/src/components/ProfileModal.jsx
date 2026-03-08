@@ -377,7 +377,22 @@ const ProfileModal = ({ isOpen, onClose }) => {
                                     min="13"
                                     max="120"
                                     value={formData.age}
-                                    onChange={e => setFormData({ ...formData, age: e.target.value })}
+                                    onChange={e => {
+                                        let val = e.target.value;
+                                        if (val !== '') {
+                                            const num = parseInt(val, 10);
+                                            if (num > 120) val = '120';
+                                        }
+                                        setFormData({ ...formData, age: val });
+                                    }}
+                                    onBlur={e => {
+                                        let val = e.target.value;
+                                        if (val !== '') {
+                                            const num = parseInt(val, 10);
+                                            if (num < 13) val = '13';
+                                            setFormData({ ...formData, age: val });
+                                        }
+                                    }}
                                     placeholder="—"
                                     className="w-full bg-gray-900 border border-gray-700 text-white px-3 py-2 rounded focus:outline-none focus:border-brand-mint/50 font-mono text-sm"
                                 />

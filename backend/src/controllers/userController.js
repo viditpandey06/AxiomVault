@@ -143,7 +143,7 @@ exports.updateProfile = async (req, res) => {
 exports.getUserProfileById = async (req, res) => {
     try {
         const user = await User.findById(req.params.id)
-            .select('username public_key _id trust_score profile_photo status');
+            .select('username public_key _id trust_score profile_photo status age gender bio');
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
